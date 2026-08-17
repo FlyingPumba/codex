@@ -1187,6 +1187,63 @@ async fn replayed_in_progress_mcp_tool_call_stays_active() {
 }
 
 #[tokio::test]
+async fn replayed_claude_research_poll_is_hidden() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let _ = drain_insert_history(&mut rx);
+
+    let poll_item = |status, result| AppServerThreadItem::McpToolCall {
+        id: "poll-1".to_string(),
+        server: "claude_research".to_string(),
+        tool: "poll".to_string(),
+        status,
+        arguments: json!({"job_id": "job-1", "wait_ms": 60000}),
+        app_context: None,
+        mcp_app_resource_uri: None,
+        plugin_id: None,
+        read_only_hint: None,
+        result,
+        error: None,
+        duration_ms: Some(60_000),
+    };
+
+    chat.replay_thread_item(
+        poll_item(
+            codex_app_server_protocol::McpToolCallStatus::InProgress,
+            None,
+        ),
+        "turn-1".to_string(),
+        ReplayKind::ThreadSnapshot,
+    );
+    chat.replay_thread_item(
+        poll_item(
+            codex_app_server_protocol::McpToolCallStatus::Completed,
+            Some(Box::new(codex_app_server_protocol::McpToolCallResult {
+                content: vec![json!({"type": "text", "text": "still running"})],
+                structured_content: None,
+                meta: None,
+            })),
+        ),
+        "turn-1".to_string(),
+        ReplayKind::ThreadSnapshot,
+    );
+
+    let rendered = drain_insert_history(&mut rx)
+        .into_iter()
+        .map(|lines| lines_to_single_string(&lines))
+        .collect::<String>();
+    insta::assert_snapshot!(
+        format!(
+            "history: {rendered:?}\nactive MCP cell: {}",
+            chat.transcript.active_cell.is_some()
+        ),
+        @r#"
+    history: ""
+    active MCP cell: false
+    "#
+    );
+}
+
+#[tokio::test]
 async fn deferred_mcp_lifecycle_events_keep_fifo_after_stream_finishes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let cwd = chat.config.cwd.to_path_buf();

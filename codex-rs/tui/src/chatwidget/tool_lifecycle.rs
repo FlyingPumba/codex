@@ -6,6 +6,10 @@
 use super::*;
 use codex_utils_path_uri::LegacyAppPathString;
 
+fn should_hide_mcp_tool_call(server: &str, tool: &str) -> bool {
+    server == "claude_research" && tool == "poll"
+}
+
 impl ChatWidget {
     pub(super) fn on_patch_apply_begin(&mut self, changes: HashMap<PathBuf, FileChange>) {
         self.add_to_history(history_cell::new_patch_event(changes, &self.config.cwd));
@@ -175,6 +179,9 @@ impl ChatWidget {
         else {
             return;
         };
+        if should_hide_mcp_tool_call(&server, &tool) {
+            return;
+        }
         self.flush_answer_stream_with_separator();
         self.flush_active_cell();
         self.transcript.active_cell = Some(Box::new(history_cell::new_active_mcp_tool_call(
@@ -191,8 +198,6 @@ impl ChatWidget {
     }
 
     pub(crate) fn handle_mcp_tool_call_completed_now(&mut self, item: ThreadItem) {
-        self.flush_answer_stream_with_separator();
-
         let ThreadItem::McpToolCall {
             id,
             server,
@@ -206,6 +211,10 @@ impl ChatWidget {
         else {
             return;
         };
+        if should_hide_mcp_tool_call(&server, &tool) {
+            return;
+        }
+        self.flush_answer_stream_with_separator();
         let invocation = McpInvocation {
             server,
             tool,
